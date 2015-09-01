@@ -1,0 +1,262 @@
+
+
+
+
+ZYNQ Platform Development Environment
+
+ 
+Contents
+1	Introduction	3
+1.1	Background	3
+1.2	Objective	3
+1.3	Reference	3
+2	Development Server: newAthena	3
+3	Hardware Description File	4
+3.1	Introduction	4
+3.2	Export HDF	5
+3.3	Update Hardware and HDF	5
+4	Build FSBL	6
+5	Build U-Boot	6
+6	Prepare Boot Image	7
+7	Build Device Tree Blob	7
+8	Build Linux Kernel	9
+9	Develop App	9
+9.1	Build Release Version App	9
+9.2	Build Debug Version App	10
+9.3	Connect target board with newAthena	11
+9.4	Connect target board with local PC	11
+9.5	Debug App	11
+10	Build Root File System	12
+11	PL (FPGA) Bitstream	12
+12	Release Image	13
+12.1	ELF format image	13
+12.2	FIT image format	13
+13	Advanced Topics	14
+13.1	PS and PL interaction	14
+13.2	View and Edit VHDL code	15
+
+					
+
+ 
+1	Introduction
+1.1	Background
+Xilinx’s ZYNQ All Programmable SoC is processor-centric platforms that offer software, hardware and I/O programmability in a single chip. The Zynq-7000 family is based on the All Programmable SoC architecture. Zynq-7000 products incorporate a dual core ARM Cortex-A9 based Processing System (PS) and Xilinx Programmable Logic (PL) in a single device.  
+1.2	Objective
+This document is intended to summarize the procedure to build the software development environment.
+1.3	Reference
+1)	http://www.wiki.xilinx.com/
+2)	Xilinx training materials
+a.	Smarter Systems Workshop Lab Workbook
+b.	Custom Embedded training
+c.	Embedded Design with PetaLinux Tools
+d.	Embedded Design with PetaLinux Tools Lab Workbook
+2	Development Server: newAthena
+All the development described in this document will be done on New Athena server (192.168.12.109), which has installed the up-to-date software and development tools (2014.4) for Zynq development.
+In order to use the installed tools, add the following at the end of user .profile:
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/games:/usr/local/sbin:/usr/local/bin:/opt/mv_pro_4.0/montavista/pro/devkit/arm/v5t_le/bin:/opt/mv_pro_4.0/montavista/pro/bin:/opt/mv_pro_4.0/montavista/common/bin:/opt/CodeSourcery/Sourcery_G++_Lite/bin:/opt/Xilinx/14.7/ISE_DS/EDK/bin:/opt/Xilinx/SDK/2014.4/bin:/opt/Xilinx/14.7/ISE_DS/EDK/gnu/arm/lin/bin:/opt/Xilinx/SDK/2014.4/gnu/arm/lin/bin:/opt/Xilinx/14.7/ISE_DS/EDK/bin/lin:/opt/Xilinx/Vivado/2014.4/bin:/opt/Xilinx/14.7/ISE_DS/ISE/bin/lin
+export PATH
+source /opt/petalinux-v2014.4-final/settings.sh
+export CROSS_COMPILE=arm-xilinx-linux-gnueabi-
+export XILINXD_LICENSE_FILE=2890@192.168.1.100
+export XILINX_EDK=/opt/Xilinx/14.7/ISE_DS/EDK
+export XILINX=/opt/Xilinx/SDK/2014.4
+To run xsdk or other GUI software on newAthena, need to do the following steps:
+1)	Install xming on the PC
+\\superstore\eng\wliu\Zynq\Xming-6-9-0-31-setup.exe
+2)	Run xming on PC
+3)	Enable X11 forwarding
+Under PuTTY
+Connection
+ --- SSH
+ --------X11
+Click “Enable X11 forwarding”
+4)	Then use PuTTY to login in newAthena
+3	Hardware Description File
+3.1	Introduction
+When exporting hardware, Vivado will group up all the hardware files into a single HDF (Hardware description file). It can be exported as long as the BD (Board Design) is generated. However in order to have a bit file to program PL, it needs to have an implemented design.
+The HDF captures all necessary information and files from a Xilinx® Embedded Development Kit (EDK) hardware design that are required for a software developer to develop, debug, and deploy software applications for that hardware. The main components of a hardware specification are:
+•	The description of hardware in an XML format
+•	The FPGA Bitstream corresponding to the hardware description
+The FPGA Bitstream is used to configure a general-purpose FPGA device with the hardware created by the hardware designer. SDK uses the hardware description file to detect the processor(s) and memory mapped peripherals present in the hardware. 
+3.2	Export HDF 
+To export HDF, follow the steps below:
+1)	Bring up Vivado on New Athena by: 
+vivado &
+2)	Select “Open Project” (or “Create New Project” if starts from scratch), the project file is suffixed with .xpr
+3)	[OPTIONAL ] Implement design by click <Generate Bitstream> in Flow Navigator when bit file is needed
+4)	select File > Export > Export Hardware 
+5)	In the pop-up “Export Hardware” window, select <include bitstream> depending on need, select <Choose Location> from pop-up list in <Export to> then browse to desired location
+ 
+6)	Click OK to export HDF to the above location 
+3.3	Update Hardware and HDF 
+When hardware is updated, HDF needs to be exported and reviewed. There are two scenarios:
+-	If HDF is not changed, just use the new Bitstream to configure FPGA to reflect the change
+-	If HDF is changed, FSBL and its associated boot image boot.bin will need to be updated. The device tree will need to be double checked and updated if needed. Also, FPGA needs to be configured with the new Bitstream 
+4	Build FSBL
+FSBL (First Stage Boot Loader) is responsible for setting up the basic hardware and loading U-Boot.
+Assume previous HDF resides in /home/sdk_export, follow the steps below to build FSBL:
+1)	petalinux-create -t project --template zynq -n prj_bsp
+2)	petalinux-config --get-hw-description=/home/sdk_export
+3)	petalinux-build
+The generated FSBL is named executable.elf by default, which can be found in prj_bsp folder.
+5	Build U-Boot
+Fetch U-Boot sources through git by executing: 
+git clone git://github.com/Xilinx/u-boot-xlnx.git
+Depending on the hardware, customized U-boot patch may be needed to address the difference, which needs to be applied before make. An example is the patch for oz745 board u-boot-oz745.patch. Likewise, u-boot.patch will be developed and provided for customized board. The basic syntax to apply the patch is as follows: 
+patch -p LEVEL < u-boot.patch
+To build U-Boot for zc702/zc706 execute:
+make zynq_zc70x_config
+make
+After the build process completes the target u-boot elf-file is created in the top level source directory, named 'u-boot'.
+Additionally in the tools/ directory the 'mkimage' utilty is created, which is used in other tasks to wrap images into u-boot format. To make mkimage available in other steps, it is recommended to add the tools directory to your $PATH.
+cd tools
+export PATH=`pwd`:$PATH
+6	Prepare Boot Image
+In Zynq’s boot flow, FSBL and U-Boot (PL Bitstream is optional) are combined together into a final image boot.bin, which is responsible to bringing up the board and loading OS into system.
+Boot.bin is generated by bootgen utility and its format is controlled by BIF file. The BIF file lists the input files to the boot image, along with optional attributes for addressing and optional encryption, authentication or checksums.
+The content of a sample bootimage.bif is shown below, assuming all the input files are under /Zynq/build:
+the__ROM_image:
+{
+[bootloader] /Zynq/build/zc706/zynq_fsbl.elf
+ /Zynq/build/zc706/u-boot.elf
+} 
+Under the same folder with BIF, execute:
+bootgen -image bootimage.bif -o i boot.bin
+The boot image Boot.bin can be resided on SD card or flash, which can be updated during runtime by programming SD or flash memory under Linux.
+7	Build Device Tree Blob
+The device tree is a data structure for describing hardware, which originated from Open Firmware. The data structure can hold any kind of data as internally it is a tree of named nodes and properties. Nodes contain properties and child nodes, while properties are name–value pairs. Given the correct device tree, the same compiled kernel can support different hardware configurations within a wider architecture family. For ARM, use of device trees has become mandatory for all new SoCs. This can be seen as a remedy to the vast number of forks (of Linux and Das U-boot) that has historically been created to support (marginally) different ARM boards. Allegedly, the purpose is to move a significant part of the hardware description out of the kernel binary, and into the compiled device tree blob, which is handed to the kernel by the bootloader, replacing a range of board specific C source files and compile time options in the kernel.
+To generate the DTB (Device Tree Blob), follow the steps below: 
+1)	The Device Tree source can be obtained through git
+git clone git://github.com/Xilinx/device-tree.git
+2)	Run HSM or HSI (Vivado 2014.4 onwards)
+hsm
+3)	Open HDF file
+open_hw_design <design_name>.hdf
+4)	Set repository path (clone done in previous step)
+set_repo_path <path to device-tree-xlnx repository>
+5)	Create SW design and setup CPU (for Zynq ps7_cortexa9_0)
+create_sw_design device-tree -os device_tree -proc ps7_cortexa9_0
+6)	Generate DTS/DTSI files to folder my_dts where output DTS/DTSI files will be generated
+generate_target -dir my_dts
+7)	The above generated DTS contains basic hardware information which is needed by the kernel, however it is highly recommended to verify and edit the DTS manually as needed, for example according to a demo working DTS.
+8)	A utility called device tree compiler (DTC) is used to compile the DTS file into a DTB file. DTC is part of the Linux source directory. The DTC might also be available through your OS's package manager. Once the DTC is available, the tool may be invoked to generate the DTB:
+./scripts/dtc/dtc -I dts -O dtb -o <devicetree name>.dtb <devicetree name>.dts
+8	Build Linux Kernel
+Fetch Linux Kernel sources through git by executing: 
+git clone git://github.com/Xilinx/linux-xlnx.git
+Depending on the hardware, customized Kernel patch may be needed to address the difference, which needs to be applied before make. An example is the patch for oz745 board linux-oz745.patch. Likewise, linux.patch will be developed and provided for customized board. The basic syntax to apply the patch is as follows: 
+patch -p LEVEL < linux.patch
+The kernel is configured based on linux-xlnx/arch/arm/configs/xilinx_zynq_defconfig:
+make ARCH=arm xilinx_zynq_defconfig
+Increase ramdisk size in kernel config to 128MB: make ARCH=arm menuconfig
+-CONFIG_BLK_DEV_RAM_SIZE=32768
++CONFIG_BLK_DEV_RAM_SIZE=131072
+To produce the kernel image:
+make ARCH=arm UIMAGE_LOADADDR=0x8000 uImage
+In the process, linux-xlnx/arch/arm/boot/Image and linux-xlnx/arch/arm/boot/uImage are created. 
+9	Develop App
+The user space Linux App can be compiled by arm-xilinx-linux-gnueabi- cross-compiler. Depending on the purpose, the application can be built for release version or debug  version.
+9.1	Build Release Version App
+The release version app can be built with the regular way of Makefile system, by using the arm-xilinx-linux-gnueabi- cross-compiler on the server.
+9.2	Build Debug Version App
+Using Petalinux and TCF (Target Communication Framework) in Eclipse, the debug version app can be built with following steps:
+1)	Change the path to the project directory and create a new embedded Linux platform from Xilinx provided bsp:
+petalinux-create -t project -s Xilinx-ZC706-v2014.4-final.bsp
+2)	Change the path to generated Petalinux project Xilinx-ZC706-2014.4 under current directory, which will be <project-root> referred below
+3)	Create a new application named myapp:
+petalinux-create -t apps --name myapp --template c
+The new application can be found in <project-root>/components/apps/myapp 
+To create a C++ application template, pass the --template c++ option.
+4)	Change to path to <project-root>, launch the rootfs configuration menu by:
+petalinux-config -c rootfs
+5)	Press the Down Arrow key to scroll down the menu to Apps
+6)	Press <Enter> to go into Apps submenu
+7)	Moveto myapp and press <Y> to select the application
+8)	Press <Enter> to open the myapp options
+9)	Select and press <Exit> to return to the main menu
+10)	Scroll down the linux/rootfs configuration menu to Debugging
+11)	Select the Debugging submenu and ensure that build debugable applications is selected
+12)	Press <Exit> to return to the main menu and exit the linux/rootfs configuration menu  
+13)	Select <Yes> to save new configuration
+14)	Build the image by: petalinux-build 
+The output binary for this build process is located at 
+<project-root>/build/linux/rootfs/apps/myapp/myapp
+9.3	Connect target board with newAthena
+When all the development tools are installed on the server, e.g. newAthena, it needs to be used as the host for debugging application on the target board, with following steps:
+1)	Connect the target board to A-network, where newAthena is also connected
+2)	Use DHCP on target board to obtain IP address (However currently the DHCP entry on A-network is full, so the target board has to be configured with a unused static IP on A-network)  
+3)	When the Ethernet connection between newAthena and target board is established, TFTP debug version myapp binary onto target board
+4)	Continue with section 9.5
+9.4	Connect target board with local PC
+When development tools are installed on local PC, it can be used as the host for debugging application on the target board, with following steps:
+1)	Establish Ethernet connection between local PC and target board
+2)	Configure the IP address on the target board so that it can be pinged by local PC
+3)	TFTP debug version myapp binary onto target board
+4)	Continue with section 9.5
+9.5	Debug App
+When Ethernet connection between target board and host is established, application can be debugged with following steps:
+1)	Ensure TCF agent is running on target board: tcf-agent &
+2)	Launch XSDK: XSDK & 
+3)	From SDK, select Run > Debug Configurations 
+4)	Double-click Xilinx C/C++ application (System Debugger) to create a new configuration
+5)	Select Linux Application Debug as the debug type
+6)	Select the connection TCP:192.168.1.2:1534
+Note: The example target board IP address is 192.168.1.2, you may have a different IP address
+7)	Select the Application tab, click Browse to set the local file path in 
+<project-root>/build/linux/rootfs/apps/myapp/myapp
+8)	Set the remote file path to be the location of the target file system, e.g. /bin/myapp
+9)	Click Apply
+10)	Click Debug to debug the program, also click Yes to confirm the perspective switch
+11)	Use the functions provided in Eclipse to debug the program as needed, including breakpoint, disassembly, step, play/resume
+10	Build Root File System
+Using Netra file system rootfs as a base, the Zynq root file system can be built using build_ramdisk.sh
+11	PL (FPGA) Bitstream
+The PL Bitstream (when generated with HDF) is used to configure the FPGA device. When changes happened to the hardware design, it is not necessary to update HDF and its relevant files but just load Bitstream if the changes are totally within the PL side. However if the changes are related with PS and/or PS-PL interfaces, the HDF and its relevant files will need to be updated.
+To configure the FPGA, there are two ways of doing so:
+-	Locate Bitstream in Boot.bin by modifying bootimage.bif as below
+the__ROM_image:
+{
+[bootloader] /Zynq/build/zc706/zynq_fsbl.elf
+/Zynq/build/zc706_wrapper.bit
+/Zynq/build/zc706/u-boot.elf
+} 
+In this case, Boot.bin will find the Bitstream and configure the FPGA automatically.
+-	The other way is to locate Bitstream in filesystem and write PL device inerface in Linux during runtime by: 	cat zc706_wrapper.bit > /dev/xdevcfg 
+12	Release Image
+The final image is a group of previous built files including:
+boot.bin, devicetree.dtb, uImage, uramdisk.image.gz and PL Bitstream
+To boot from SD card, copy the above products onto SD card and set boot mode to SD.
+To boot from flash, program the above products onto flash partitions and set boot mode to flash, for example program boot.bin to flash memory under Linux: 
+flashcp boot.bin /dev/mtd0
+12.1	ELF format image
+The above zynq_fsbl.elf, u-boot.elf and user space app are examples of ELF (Executable and Linkable Format) format, which supports runtime execution of the file.  
+12.2	FIT image format
+A special FIT (*.ub) image format is supported by Zynq, indicating that this file is wrapped with the header required to boot Linux from U-Boot. The Petalinux flow can create image.ub, which consists of kernel image, device tree blob and rootfs.     
+13	Advanced Topics
+13.1	PS and PL interaction
+Most PS-PL interfacing is accomplished using some combination of the nine available AXI ports
+-	Two general-purpose master ports
+-	Two general-purpose slave ports
+-	Four high-performance slave ports
+-	One accelerator coherency port (ACP) slave port
+AXI is a point-to-point protocol
+-	A single master can connect to multiple slaves by using a switch
+-	An understanding of PS interconnect (switch) operation is necessary for proper design use of the various parts
+-	A Master port only connects to a Slave port
+-	A Slave port only connects to a Maser port
+-	All five channels are implemented: Read: Address, Data; Write: Address, Data, Response
+-	Full duplex
+Other diagnostic, clock, and interrupt signals complete the PS-PL interface
+Six PS interconnects provide pathways for PS components and PS/PL AXI ports
+-	Central interconnect
+-	PL to memory interconnect
+-	PS slave interconnect
+-	PS master interconnect
+-	OCM interconnect
+-	IOP master/slave interconnect
+PS-PL interaction would be a broad and complex topic depending on the needs and purpose of the products. Further detailed information can be obtained from Xilinx reference guide UG and Xilinx training materials.
+13.2	View and Edit VHDL code
+Xilinx Vivado Design Suite delivers a SoC-strength, IP-centric and system-centric, next generation development environment that has been built from the ground up to address the productivity bottlenecks in system-level integration and implementation. It has the ability to support FPGA tool flow including VHDL development. 
+ 
+The above is an example of viewing the main zc706.vhd development file. By using the Design Suite, users can edit the VHDL code, analyze and synthesis it, and implement the design to generate Bitstream.
+Xilinx has provided Vivado Video Tutorials on: http://www.xilinx.com/training/vivado/.  Likewise, please check Xilinx support and User Guide for further and advanced information.  
